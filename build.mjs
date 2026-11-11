@@ -1,13 +1,17 @@
 // node build.mjs [list.txt ...]
 // No args: Brave's installed component lists (newest version of each) + lists/*.txt -> dist/userScript.js
-import { readFileSync, readdirSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, readdirSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { compile, inject } from './lib/compile.mjs';
+import { compile, inject, packText } from './lib/compile.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const BRAVE = join(homedir(), 'Library/Application Support/BraveSoftware/Brave-Browser');
+// raw.githubusercontent serves a new commit within minutes, and the content-hashed name means a cached old
+// script can never pick up a newer data file in a format it doesn't understand.
+const DATA_BASE = process.env.DATA_BASE || 'https://raw.githubusercontent.com/skjain-dev/tizenshield/master/dist/';
 
 const newer = (a, b) => {
   const pa = a.split('.').map(Number), pb = b.split('.').map(Number);
@@ -32,11 +36,16 @@ const files = process.argv.length > 2 ? process.argv.slice(2)
 if (!files.length) { console.error('no filter lists found'); process.exit(1); }
 
 const data = compile(files.map((f) => readFileSync(f, 'utf8')));
-const out = inject(readFileSync(join(root, 'src/runtime.js'), 'utf8'), data);
-mkdirSync(join(root, 'dist'), { recursive: true });
-writeFileSync(join(root, 'dist/userScript.js'), out);
+const text = packText(data);
+const name = `filters-${createHash('sha256').update(text).digest('hex').slice(0, 10)}.txt`;
+const dist = join(root, 'dist');
+mkdirSync(dist, { recursive: true });
+for (const f of readdirSync(dist)) if (/^filters-.*\.txt$/.test(f) && f !== name) unlinkSync(join(dist, f));
+writeFileSync(join(dist, name), text);
+const out = inject(readFileSync(join(root, 'src/runtime.js'), 'utf8'), DATA_BASE + name);
+writeFileSync(join(dist, 'userScript.js'), out);
 
 const count = (s) => (s ? s.split('\n').length : 0);
 console.log(`${files.length} lists -> generic hide ${count(data.g)}, site hide ${Object.keys(data.s).length} hosts, ` +
   `site exceptions ${Object.keys(data.x).length} hosts, block ${count(data.n)}, block 3p ${count(data.t)}, ` +
-  `allow ${count(data.e)} -> dist/userScript.js ${(out.length / 1024).toFixed(0)} KB`);
+  `allow ${count(data.e)} -> dist/userScript.js ${(out.length / 1024).toFixed(0)} KB + dist/${name} ${(text.length / 1024).toFixed(0)} KB`);

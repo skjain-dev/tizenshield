@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { compile, inject, pack, hash, TOKENS } from '../lib/compile.mjs';
+import { compile, inject, pack, packText, hash, TOKENS } from '../lib/compile.mjs';
 
 const lines = (s) => (s ? s.split('\n') : []);
 const c = (...ls) => compile([ls.join('\n')]);
@@ -67,13 +67,19 @@ test('pack puts every host in the bucket its hash selects', () => {
   assert.equal(p.h.length, 8);
 });
 
-test('inject fills both tokens exactly once and ships the same hash function', () => {
-  const runtime = `var F = ${TOKENS.filters}; var hash = ${TOKENS.hash};`;
-  const out = inject(runtime, c('||ads.example^'));
-  const fn = new Function(out + '; return [F, hash];');
-  const [F, h] = fn();
+test('packText splits back into the generic selectors and every bucket', () => {
+  const d = c('##.a', '||ads.example^');
+  const parts = packText(d, 8).split('\u001d');
+  assert.equal(parts.length, 9);
+  assert.equal(parts[0], '.a');
+  assert.ok(parts[1 + (hash('ads.example') & 7)].includes('\nnads.example\n'));
+});
+
+test('inject fills the data URL and the hash function exactly once', () => {
+  const runtime = `var U = ${TOKENS.filtersUrl}; var hash = ${TOKENS.hash};`;
+  const [u, h] = new Function(inject(runtime, 'https://x/filters-1.txt') + '; return [U, hash];')();
+  assert.equal(u, 'https://x/filters-1.txt');
   assert.equal(h('ads.example'), hash('ads.example'));
-  assert.ok(F.h[h('ads.example') & (F.h.length - 1)].includes('\nnads.example\n'));
-  assert.throws(() => inject('no tokens', {}));
-  assert.throws(() => inject(runtime + TOKENS.hash, c()));
+  assert.throws(() => inject('no tokens', 'u'));
+  assert.throws(() => inject(runtime + TOKENS.hash, 'u'));
 });

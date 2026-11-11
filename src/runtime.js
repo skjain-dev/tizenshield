@@ -42,7 +42,8 @@
   try { main(); } catch (e) { report(e); }
 
   function main() {
-    var F = /*__FILTERS__*/null;
+    var FILTERS_URL = /*__FILTERS_URL__*/null;
+    var F = null, onFilters = []; // filled once the data file arrives
     var hash = /*__HASH__*/null;
     var HOME = 'https://example.com/#tizenshield-home';
     var SEARCH = 'https://search.brave.com/search?q=';
@@ -56,12 +57,13 @@
         localStorage.setItem('tizenshield:' + k, v);
       } catch (e) { return null; }
     }
-    var shieldsOn = !!F && store('shields') !== 'off';
+    var shieldsOn = !!FILTERS_URL && store('shields') !== 'off';
 
     // ---------- rule lookup (see pack() in lib/compile.mjs) ----------
     function bucket(h) { return F.h[hash(h) & (F.h.length - 1)]; }
-    function hasRule(kind, h) { return bucket(h).indexOf('\n' + kind + h + '\n') >= 0; }
+    function hasRule(kind, h) { return !!F && bucket(h).indexOf('\n' + kind + h + '\n') >= 0; }
     function siteSelectors(kind, h) {
+      if (!F) return [];
       var b = bucket(h), key = '\n' + kind + h + '\t', i = b.indexOf(key);
       return i < 0 ? [] : b.slice(i + key.length, b.indexOf('\n', i + 1)).split('\u001f');
     }
@@ -99,8 +101,20 @@
 
     function fireError(el) { setTimeout(function () { el.dispatchEvent(new Event('error')); }, 0); }
 
-    if (shieldsOn) {
+    function whenFilters(fn) { if (F) fn(); else onFilters.push(fn); }
+
+    // Only the top page blocks and hides: ad frames get hidden whole by the page's own rules, and loading
+    // the data into every frame would cost the TV memory and time for little gain.
+    if (shieldsOn && TOP) {
       var origFetch = window.fetch;
+      origFetch.call(window, FILTERS_URL).then(function (r) {
+        if (!r.ok) throw new Error('filters ' + r.status);
+        return r.text();
+      }).then(function (text) {
+        var parts = text.split('\u001d');
+        F = { g: parts[0], h: parts.slice(1) };
+        onFilters.splice(0).forEach(function (fn) { try { fn(); } catch (e) { report(e); } });
+      }).catch(function () { /* blocked by the page's CSP, or offline: the page just runs unshielded */ });
       if (origFetch) {
         window.fetch = function (input) {
           var url = typeof input === 'string' ? input : input && input.url;
@@ -691,7 +705,7 @@
 
     function start() {
       try {
-        if (shieldsOn) hideAds();
+        if (shieldsOn) whenFilters(hideAds);
         mount();
         window.addEventListener('keydown', function (e) { try { onKey(e); } catch (err) { report(err); } }, true);
         window.addEventListener('resize', function () { moveCursor(0, 0); });
@@ -704,11 +718,11 @@
           return;
         }
         // Click-jacking ads navigate the whole tab to an ad network's page; bounce straight back from those.
-        if (shieldsOn && hostBlocked(host, false)) {
+        if (shieldsOn) whenFilters(function () {
+          if (!hostBlocked(host, false)) return;
           toast('Blocked an ad page');
           setTimeout(function () { if (history.length > 1) history.back(); else location.assign(HOME); }, 800);
-          return;
-        }
+        });
         if (store('hinted') !== '1') {
           store('hinted', '1');
           toast('Arrows jump between links · OK opens · Red: Home · Green: close pop-ups');

@@ -3,7 +3,7 @@
 // Usage: node test/e2e.mjs [path-to-chromium]   (defaults to the Brave install on macOS)
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -60,6 +60,13 @@ ws.addEventListener('message', (m) => {
     send('Runtime.evaluate', { expression: script, contextId: msg.params.context.id }).catch(() => {});
   }
   // The runtime alerts on errors; an open dialog would freeze every later evaluate, so record and dismiss it.
+  // Serve the filter data file from dist/ instead of GitHub, so the test covers this build's data.
+  if (msg.method === 'Fetch.requestPaused') {
+    const file = join(here, '../dist', msg.params.request.url.split('/').pop());
+    const body = existsSync(file) ? readFileSync(file).toString('base64') : '';
+    send('Fetch.fulfillRequest', { requestId: msg.params.requestId, responseCode: body ? 200 : 404, body,
+      responseHeaders: [{ name: 'Access-Control-Allow-Origin', value: '*' }, { name: 'Content-Type', value: 'text/plain' }] }).catch(() => {});
+  }
   if (msg.method === 'Page.javascriptDialogOpening') {
     dialogs.push(msg.params.message);
     send('Page.handleJavaScriptDialog', { accept: true }).catch(() => {});
@@ -91,9 +98,13 @@ const check = async (name, fn) => {
 try {
   await send('Runtime.enable');
   await send('Page.enable');
+  await send('Fetch.enable', { patterns: [{ urlPattern: '*raw.githubusercontent.com/*' }] });
   await send('Page.navigate', { url: origin + '/' });
   await sleep(1500);
 
+  await check('injected script stays small (the TV debugger drops multi-MB scripts)', async () => {
+    assert.ok(script.length < 150 * 1024, `${(script.length / 1024).toFixed(0)} KB`);
+  });
   await check('script runs once per page, in the main world', async () => {
     assert.equal(await evalJs('typeof window.__tizenShieldTest'), 'object');
     assert.equal(await evalJs("document.querySelectorAll('tizen-shield-ui').length"), 1);
