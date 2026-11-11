@@ -1,17 +1,17 @@
 // End-to-end check: inject dist/userScript.js the way TizenBrew does (CDP Runtime.evaluate on every new
 // execution context) into a headless Chromium with a throwaway profile, then drive it with TV key codes.
 // Usage: node test/e2e.mjs [path-to-chromium]   (defaults to the Brave install on macOS)
-import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
+import { launch, BRAVE } from '../tools/tizenbrew.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const script = readFileSync(join(here, '../dist/userScript.js'), 'utf8');
-const browserPath = process.argv[2] || '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser';
+const browserPath = process.argv[2] || BRAVE;
 
 const PAGES = {
   '/': `<!doctype html><title>one</title><body style="margin:0;height:3000px;font:20px sans-serif">
@@ -31,48 +31,8 @@ const server = createServer((req, res) => {
 const origin = `http://127.0.0.1:${server.address().port}`;
 
 const profile = mkdtempSync(join(tmpdir(), 'tizenshield-e2e-'));
-const browser = spawn(browserPath, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`,
-  '--no-first-run', '--window-size=1920,1080', 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
-const wsUrl = await new Promise((res, rej) => {
-  let buf = '';
-  browser.stderr.on('data', (d) => { buf += d; const m = buf.match(/ws:\/\/\S+/); if (m) res(m[0]); });
-  setTimeout(() => rej(new Error('browser did not start')), 20000);
-});
-
-const port = new URL(wsUrl).port;
-const targets = await (await fetch(`http://127.0.0.1:${port}/json`)).json();
-const ws = new WebSocket(targets.find((t) => t.type === 'page').webSocketDebuggerUrl);
-await new Promise((r) => ws.addEventListener('open', r));
-let id = 0;
-const pending = new Map();
-const send = (method, params = {}) => new Promise((res, rej) => {
-  const i = ++id;
-  pending.set(i, { res, rej });
-  ws.send(JSON.stringify({ id: i, method, params }));
-});
-ws.addEventListener('message', (m) => {
-  const msg = JSON.parse(m.data);
-  if (msg.id && pending.has(msg.id)) {
-    const p = pending.get(msg.id); pending.delete(msg.id);
-    msg.error ? p.rej(new Error(msg.error.message)) : p.res(msg.result);
-  }
-  if (msg.method === 'Runtime.executionContextCreated') {
-    send('Runtime.evaluate', { expression: script, contextId: msg.params.context.id }).catch(() => {});
-  }
-  // The runtime alerts on errors; an open dialog would freeze every later evaluate, so record and dismiss it.
-  // Serve the filter data file from dist/ instead of GitHub, so the test covers this build's data.
-  if (msg.method === 'Fetch.requestPaused') {
-    const file = join(here, '../dist', msg.params.request.url.split('/').pop());
-    const body = existsSync(file) ? readFileSync(file).toString('base64') : '';
-    send('Fetch.fulfillRequest', { requestId: msg.params.requestId, responseCode: body ? 200 : 404, body,
-      responseHeaders: [{ name: 'Access-Control-Allow-Origin', value: '*' }, { name: 'Content-Type', value: 'text/plain' }] }).catch(() => {});
-  }
-  if (msg.method === 'Page.javascriptDialogOpening') {
-    dialogs.push(msg.params.message);
-    send('Page.handleJavaScriptDialog', { accept: true }).catch(() => {});
-  }
-});
-const dialogs = [];
+const { send, dialogs, close } = await launch({ browserPath, profile, scripts: () => [script], dist: join(here, '../dist'),
+  args: ['--headless=new', '--window-size=1920,1080'] });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const evalJs = async (expr) => {
@@ -96,9 +56,6 @@ const check = async (name, fn) => {
 };
 
 try {
-  await send('Runtime.enable');
-  await send('Page.enable');
-  await send('Fetch.enable', { patterns: [{ urlPattern: '*raw.githubusercontent.com/*' }] });
   await send('Page.navigate', { url: origin + '/' });
   await sleep(1500);
 
@@ -259,11 +216,7 @@ try {
   await check('no error dialogs', async () => assert.deepEqual(dialogs, []));
 } finally {
   console.log(results.join('\n'));
-  ws.close();
-  const exited = new Promise((r) => browser.once('exit', r));
-  browser.kill();
-  await exited;
+  await close();
   server.close();
   rmSync(profile, { recursive: true, force: true, maxRetries: 5 });
 }
-

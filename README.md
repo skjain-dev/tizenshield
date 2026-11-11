@@ -53,7 +53,11 @@ A TizenBrew module is a script running inside the TV's web engine, not a browser
 node build.mjs   # Brave's installed lists (macOS) + lists/*.txt -> dist/userScript.js
 node --test test/*.test.mjs  # compiler unit tests
 node test/e2e.mjs  # injects the build into headless Brave exactly as TizenBrew does
+node tools/tv-sim.mjs [--slow] [url]  # TV simulator window; rebuild + Cmd+R to see changes
 ```
+
+In the simulator: arrows, Enter = OK, Esc = Return, Ctrl+R / Ctrl+G / Ctrl+Y = red / green / yellow,
+PgUp / PgDn = CH. It shows layout and behaviour, not the TV's own engine or TizenBrew's timing.
 
 `dist/userScript.js` is committed, because TizenBrew loads it straight from the repo through jsDelivr.
 
