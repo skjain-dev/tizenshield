@@ -108,7 +108,8 @@ try {
   await check('script runs once per page, in the main world', async () => {
     assert.equal(await evalJs('typeof window.__tizenShieldTest'), 'object');
     assert.equal(await evalJs("document.querySelectorAll('tizen-shield-ui').length"), 1);
-    assert.equal(await evalJs("[...document.documentElement.children].some((n) => /TizenShield (starting|error)/.test(n.textContent))"), false);
+    const label = await evalJs("([...document.documentElement.children].find((n) => /^TizenShield (starting|error)/.test(n.textContent)) || {}).textContent || ''");
+    assert.equal(label, '');
   });
   // Brave's own Shields also hide ads in the test browser, so assert on our adopted sheet, not just the result.
   await check('our cosmetic sheet is adopted and covers .abovead', async () => {

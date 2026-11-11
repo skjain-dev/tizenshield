@@ -7,9 +7,9 @@
 
   // A status label drawn straight into the page with nothing but basic DOM calls, so the TV shows whether the
   // script ran at all and what broke. alert() can't be relied on: TizenBrew pages may swallow dialogs.
-  var badge = null;
+  var badge = null, badgeDone = false;
   function showBadge(text, bad) {
-    if (!TOP) return;
+    if (!TOP || (badgeDone && !bad)) return; // a late retry must not resurrect the 'starting' label
     try {
       if (!document.documentElement) { setTimeout(function () { showBadge(text, bad); }, 50); return; }
       badge = badge || document.createElement('div');
@@ -19,23 +19,13 @@
       document.documentElement.appendChild(badge);
     } catch (e) { /* nothing left to report with */ }
   }
-  function hideBadge() { if (badge && badge.parentNode) badge.parentNode.removeChild(badge); }
+  function hideBadge() { badgeDone = true; if (badge && badge.parentNode) badge.parentNode.removeChild(badge); }
+  if (window.__tizenShield) return;
+  window.__tizenShield = true;
   showBadge('TizenShield starting…');
   var CONSTRUCTABLE = (function () {
     try { new CSSStyleSheet(); return 'adoptedStyleSheets' in document; } catch (e) { return false; }
   })();
-
-  // TizenBrew evaluates this in every execution context, including isolated worlds that share the page's DOM
-  // but not its globals. Adopted sheets live on the shared document, so a marker sheet makes the first context
-  // (the page's main world) the only one that runs.
-  var MARKER = 'tizen-shield-marker';
-  if (CONSTRUCTABLE) {
-    if (document.adoptedStyleSheets.some(function (s) { return s.cssRules[0] && s.cssRules[0].selectorText === MARKER; })) return;
-    newSheet(document).insertRule(MARKER + '{}');
-  } else {
-    if (window.__tizenShield) return;
-    window.__tizenShield = true;
-  }
 
   var reported = false;
   function report(e) {
@@ -48,9 +38,11 @@
   // A sheet attached to a document or shadow root; <style> fallback for engines without constructable sheets.
   function newSheet(target) {
     if (CONSTRUCTABLE) {
-      var s = new CSSStyleSheet();
-      target.adoptedStyleSheets = target.adoptedStyleSheets.concat([s]);
-      return s;
+      try {
+        var s = new CSSStyleSheet();
+        target.adoptedStyleSheets = target.adoptedStyleSheets.concat([s]);
+        return s;
+      } catch (e) { /* engine refuses to adopt it here: use a <style> element instead */ }
     }
     var st = document.createElement('style');
     (target === document ? (document.head || document.documentElement) : target).appendChild(st);
@@ -63,7 +55,9 @@
     var FILTERS_URL = /*__FILTERS_URL__*/null;
     var F = null, onFilters = []; // filled once the data file arrives
     var hash = /*__HASH__*/null;
-    var HOME = 'https://example.com/#tizenshield-home';
+    // Home opens over Brave Search: the start page TizenBrew demonstrably injected into on this TV. A very fast
+    // page (example.com) can finish loading before TizenBrew's service registers the module, so nothing is injected.
+    var HOME = 'https://search.brave.com/#tizenshield-home';
     var SEARCH = 'https://search.brave.com/search?q=';
 
     var host = location.hostname.toLowerCase();
@@ -123,16 +117,9 @@
 
     // Only the top page blocks and hides: ad frames get hidden whole by the page's own rules, and loading
     // the data into every frame would cost the TV memory and time for little gain.
+    var origFetch = window.fetch;
     if (shieldsOn && TOP) {
-      var origFetch = window.fetch;
-      origFetch.call(window, FILTERS_URL).then(function (r) {
-        if (!r.ok) throw new Error('filters ' + r.status);
-        return r.text();
-      }).then(function (text) {
-        var parts = text.split('\u001d');
-        F = { g: parts[0], h: parts.slice(1) };
-        onFilters.splice(0).forEach(function (fn) { try { fn(); } catch (e) { report(e); } });
-      }).catch(function () { /* blocked by the page's CSP, or offline: the page just runs unshielded */ });
+
       if (origFetch) {
         window.fetch = function (input) {
           var url = typeof input === 'string' ? input : input && input.url;
@@ -293,6 +280,7 @@
       '.toast.show{opacity:.96}'
     ].join('');
 
+    var cssFailures = [];
     var shadow, cursor, ring, home, clock, search, toastEl, rows = [], fr = 0, fc = 0;
     var cx = window.innerWidth / 2, cy = window.innerHeight / 2, speed = 0, lastMove = 0;
     var idleTimer = 0, toastTimer = 0, clockTimer = 0, snapped = null;
@@ -314,7 +302,10 @@
         .forEach(function (p) { hostEl.style.setProperty(p[0], p[1], 'important'); });
       shadow = hostEl.attachShadow({ mode: 'closed' });
       var sheet = newSheet(shadow);
-      UI_CSS.split('}').forEach(function (r) { if (r.trim()) sheet.insertRule(r + '}', sheet.cssRules.length); });
+      UI_CSS.split('}').forEach(function (r) {
+        if (!r.trim()) return;
+        try { sheet.insertRule(r + '}', sheet.cssRules.length); } catch (e) { cssFailures.push(r.slice(0, 40)); }
+      });
 
       ring = el('div', 'ring');
       ring.hidden = true;
@@ -721,11 +712,28 @@
       else snapMove(k);
     }
 
+    function loadFilters() {
+      origFetch.call(window, FILTERS_URL).then(function (r) {
+        if (!r.ok) throw new Error('filters ' + r.status);
+        return r.text();
+      }).then(function (text) {
+        var parts = text.split('\u001d');
+        F = { g: parts[0], h: parts.slice(1) };
+        onFilters.splice(0).forEach(function (fn) { try { fn(); } catch (e) { report(e); } });
+      }).catch(function () { /* blocked by the page's CSP, or offline: the page just runs unshielded */ });
+    }
+
     function start() {
       try {
-        if (shieldsOn) whenFilters(hideAds);
+        // TizenBrew evaluates this in every execution context, including isolated worlds that share the page's DOM
+        // but not its globals, so the first one to mark <html> owns the page and the rest stand down.
+        var root = document.documentElement;
+        if (root.hasAttribute('data-tizenshield')) { hideBadge(); return; }
+        root.setAttribute('data-tizenshield', '');
+        if (shieldsOn) { loadFilters(); whenFilters(hideAds); }
         mount();
         hideBadge();
+        if (cssFailures.length) toast('TizenShield: TV skipped styles: ' + cssFailures.join(' | '));
         window.addEventListener('keydown', function (e) { try { onKey(e); } catch (err) { report(err); } }, true);
         window.addEventListener('resize', function () { moveCursor(0, 0); });
         if (launchPage) {
@@ -758,7 +766,7 @@
 
     window.__tizenShieldTest = { isBlocked: isBlocked, toUrl: toUrl, state: function () {
       return { cx: cx, cy: cy, homeOpen: !home.hidden, row: fr, col: fc, blocked: blockedCount, shieldsOn: shieldsOn,
-        cursorOn: cursorOn, snapped: snapped && (snapped.id || snapped.tagName),
+        cursorOn: cursorOn, cssFailures: cssFailures, snapped: snapped && (snapped.id || snapped.tagName),
         tiles: loadList('tiles').map(function (t) { return t.n; }), hidden: loadList('hidden').length,
         focused: rows[fr] && rows[fr][fc] ? rows[fr][fc].textContent || rows[fr][fc].placeholder : null };
     } };

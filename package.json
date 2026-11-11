@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "A remote-friendly web browser for Samsung Tizen TVs with Brave-style ad and tracker blocking.",
   "packageType": "mods",
-  "websiteURL": "https://example.com/#tizenshield-home",
+  "websiteURL": "https://search.brave.com/#tizenshield-home",
   "main": "dist/userScript.js",
   "keys": ["ColorF0Red", "ColorF1Green", "ColorF2Yellow", "ChannelUp", "ChannelDown"],
   "type": "module",
