@@ -1,0 +1,16 @@
+{
+  "name": "tizenshield",
+  "appName": "TizenShield Browser",
+  "version": "0.1.0",
+  "description": "A remote-friendly web browser for Samsung Tizen TVs with Brave-style ad and tracker blocking.",
+  "packageType": "mods",
+  "websiteURL": "https://search.brave.com/",
+  "main": "dist/userScript.js",
+  "keys": ["ColorF0Red", "ChannelUp", "ChannelDown"],
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "license": "GPL-3.0-only"
+}
