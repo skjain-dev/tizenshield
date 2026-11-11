@@ -6,7 +6,7 @@
   "packageType": "mods",
   "websiteURL": "https://example.com/#tizenshield-home",
   "main": "dist/userScript.js",
-  "keys": ["ColorF0Red", "ColorF1Green", "ChannelUp", "ChannelDown"],
+  "keys": ["ColorF0Red", "ColorF1Green", "ColorF2Yellow", "ChannelUp", "ChannelDown"],
   "type": "module",
   "scripts": {
     "build": "node build.mjs",

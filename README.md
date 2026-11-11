@@ -14,6 +14,13 @@ In TizenBrew's module manager choose **Add GitHub Module**, enter `skjain-dev/ti
 It opens on **Home**: big tiles for video, news, sports and everyday sites, plus a search tile if you do want to type.
 Move between tiles with the arrows and press OK.
 
+**Your own tiles**, all from the remote:
+- On any website: Red → **Add to Home**, then confirm the "Add … to Home?" tile on Home.
+- On Home: type a site into **Add a website** (e.g. `example.com`).
+- Remove: highlight any tile on Home and press **Yellow**. Removed built-in tiles come back with **Restore tiles**.
+
+Your tiles are stored on the TV, in the Home page's own storage.
+
 On a website:
 
 | Key | Action |
@@ -21,7 +28,7 @@ On a website:
 | Arrows | Jump to the nearest link or button in that direction; with nothing there, the page scrolls |
 | OK | Open / press what's highlighted. On a text field, opens the TV keyboard |
 | Return | Back (or leaves a text field) |
-| Red | Home (tiles, plus Back to page, Close pop-ups, Shields, Pointer, Reload) |
+| Red | Menu: Home, Back to page, Close pop-ups, Add to Home, Shields, Pointer, Reload, Search |
 | Green | Close pop-ups: hides overlays covering the page and unlocks scrolling |
 | CH ▲ / CH ▼ | Page up / page down |
 

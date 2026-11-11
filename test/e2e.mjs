@@ -26,7 +26,7 @@ const PAGES = {
 };
 const server = createServer((req, res) => {
   res.setHeader('content-type', 'text/html');
-  res.end(PAGES[req.url.split('#')[0]] || 'nf');
+  res.end(PAGES[req.url.split(/[?#]/)[0]] || 'nf');
 }).listen(0);
 const origin = `http://127.0.0.1:${server.address().port}`;
 
@@ -148,15 +148,16 @@ try {
     await key(404, 'ColorF1Green');
     assert.equal(await evalJs("getComputedStyle(document.getElementById('overlay')).display"), 'none');
   });
-  await check('Red opens Home with tile rows; arrows move between tiles; Return closes', async () => {
+  await check('Red on a page opens the menu at Home; arrows move; Return closes', async () => {
     await key(403, 'ColorF0Red');
     let s = await state();
     assert.equal(s.homeOpen, true);
-    assert.equal(s.row, 0);
-    await key(40); await key(39);
-    s = await state();
-    assert.deepEqual([s.row, s.col], [1, 1]);
-    await shot('home');
+    assert.equal(s.focused, 'Home');
+    await key(39);
+    assert.equal((await state()).focused, 'Back to page');
+    await key(40);
+    assert.equal((await state()).focused, 'Search or type a website');
+    await shot('menu');
     await key(10009);
     assert.equal((await state()).homeOpen, false);
   });
@@ -173,14 +174,58 @@ try {
     await sleep(1500);
     assert.equal(await evalJs('document.title'), 'one');
   });
-  await check('launch page opens straight into Home and Return keeps it there', async () => {
-    await send('Page.navigate', { url: origin + '/two#tizenshield-home' });
+  const launch = async (hash = '') => {
+    // A fresh query string forces a real page load; a hash-only change wouldn't re-run the script.
+    await send('Page.navigate', { url: origin + '/two?' + Date.now() + '#tizenshield-home' + hash });
     await sleep(1500);
-    assert.equal((await state()).homeOpen, true);
-    assert.equal((await state()).row, 1);
-    await key(10009);
-    assert.equal((await state()).homeOpen, true);
+  };
+  const focusOn = async (label) => {
+    for (let i = 0; i < 6 && (await state()).focused !== label; i++) {
+      await key(39);
+      if (process.env.E2E_VERBOSE) console.error("  right ->", (await state()).focused);
+    }
+    assert.equal((await state()).focused, label);
+  };
+  await check('launch page opens straight into Home on the first tile', async () => {
+    await launch();
+    const s = await state();
+    assert.equal(s.homeOpen, true);
+    assert.equal(s.focused, 'Twitch');
     await shot('launch');
+  });
+  await check('Yellow removes a built-in tile; Restore tiles brings it back', async () => {
+    await key(405, 'ColorF2Yellow');
+    let s = await state();
+    assert.equal(s.hidden, 1);
+    assert.equal(s.focused, 'Dailymotion');
+    await key(38);
+    await focusOn('Restore tiles');
+    await key(13);
+    assert.equal((await state()).hidden, 0);
+  });
+  await check('typing a website into the add field creates a tile', async () => {
+    await focusOn('Add a website, e.g. example.com');
+    await key(13);
+    await send('Input.insertText', { text: 'example.org' });
+    await key(13);
+    const s = await state();
+    assert.deepEqual(s.tiles, ['Example']);
+    assert.equal(s.focused, 'Example');
+    await shot('my-tiles');
+  });
+  await check('Yellow on your own tile deletes it', async () => {
+    await key(405, 'ColorF2Yellow');
+    assert.deepEqual((await state()).tiles, []);
+  });
+  await check('a site handed over by a page waits for OK before it becomes a tile', async () => {
+    await launch('&add=' + encodeURIComponent('https://news.example.net/x') + '&name=' + encodeURIComponent('Example News - Home'));
+    let s = await state();
+    assert.deepEqual(s.tiles, []);
+    assert.equal(s.focused, 'Add Example News to Home?');
+    await key(13);
+    s = await state();
+    assert.deepEqual(s.tiles, ['Example News']);
+    assert.equal(await evalJs('location.hash'), '#tizenshield-home');
   });
   await check('address bar: text searches, domains open', async () => {
     const u = (t) => evalJs(`__tizenShieldTest.toUrl(${JSON.stringify(t)})`);

@@ -204,7 +204,8 @@
       ['Watch', [
         ['Twitch', 'https://www.twitch.tv/', '#6441a5'], ['Dailymotion', 'https://www.dailymotion.com/', '#0066dc'],
         ['Vimeo', 'https://vimeo.com/watch', '#1ab7ea'], ['TED', 'https://www.ted.com/talks', '#e62b1e'],
-        ['NASA+', 'https://plus.nasa.gov/', '#0b3d91'], ['Old Movies', 'https://archive.org/details/feature_films', '#3a3a3a']]],
+        ['NASA+', 'https://plus.nasa.gov/', '#0b3d91'], ['Old Movies', 'https://archive.org/details/feature_films', '#3a3a3a'],
+        ['StreameX', 'https://www.streamex.hn/', '#b0124f']]],
       ['News', [
         ['Google News', 'https://news.google.com/', '#1a73e8'], ['BBC News', 'https://www.bbc.com/news', '#bb1919'],
         ['The Hindu', 'https://www.thehindu.com/', '#24303a'], ['NDTV', 'https://www.ndtv.com/', '#c4161c'],
@@ -219,9 +220,9 @@
     ];
 
     var KEYCODES = { 37: 'left', 38: 'up', 39: 'right', 40: 'down', 13: 'enter', 65376: 'enter', 10009: 'back',
-      65385: 'back', 27: 'back', 403: 'red', 404: 'green', 427: 'pageup', 428: 'pagedown', 33: 'pageup', 34: 'pagedown' };
+      65385: 'back', 27: 'back', 403: 'red', 404: 'green', 405: 'yellow', 427: 'pageup', 428: 'pagedown', 33: 'pageup', 34: 'pagedown' };
     var KEYNAMES = { ArrowLeft: 'left', ArrowUp: 'up', ArrowRight: 'right', ArrowDown: 'down', Enter: 'enter',
-      Escape: 'back', ColorF0Red: 'red', ColorF1Green: 'green', PageUp: 'pageup', PageDown: 'pagedown' };
+      Escape: 'back', ColorF0Red: 'red', ColorF1Green: 'green', ColorF2Yellow: 'yellow', PageUp: 'pageup', PageDown: 'pagedown' };
     var DIRS = { left: [-1, 0], right: [1, 0], up: [0, -1], down: [0, 1] };
     var CLICKABLE = 'a[href],button,input,select,textarea,summary,[role=button],[role=link],[role=tab],' +
       '[role=menuitem],[role=option],[onclick],[tabindex]:not([tabindex="-1"]),[aria-label*="close" i],[class*="close" i]';
@@ -242,12 +243,13 @@
       '.brand{font-size:34px;font-weight:700;letter-spacing:.5px}.brand b{color:#fb542b}',
       '.clock{font-size:34px;font-weight:300;color:#c9ccd3}',
       '.label{margin:26px 0 12px;font-size:22px;color:#8d93a1;text-transform:uppercase;letter-spacing:2px}',
-      '.row{display:flex;gap:22px}',
+      '.row{display:flex;flex-wrap:wrap;gap:22px}.row+.row{margin-top:22px}',
+      '.hint{font-size:22px;color:#8d93a1}',
       '.tile{flex:none;width:250px;height:140px;box-sizing:border-box;padding:18px;border-radius:18px;display:flex;',
       'align-items:flex-end;font-size:27px;font-weight:700;color:#fff;transition:transform .12s ease-out,box-shadow .12s;',
       'box-shadow:0 6px 18px rgba(0,0,0,.4);outline:4px solid transparent}',
       '.tile.dark{color:#111}',
-      '.tile.action{background:#232733;font-weight:500;font-size:24px}',
+      '.tile.action{width:auto;min-width:150px;padding:0 26px;align-items:center;background:#232733;font-weight:500;font-size:24px}',
       '.search{width:520px;padding:0 24px;align-items:center;font:inherit;font-size:26px;color:#fff;background:#232733;',
       'border:0;border-radius:18px;height:84px;outline:4px solid transparent}',
       '.search::placeholder{color:#8d93a1}',
@@ -263,7 +265,7 @@
     var cx = window.innerWidth / 2, cy = window.innerHeight / 2, speed = 0, lastMove = 0;
     var idleTimer = 0, toastTimer = 0, clockTimer = 0, snapped = null;
     var cursorOn = store('cursor') !== 'off';
-    var launchPage = location.hash === LAUNCH_HASH;
+    var launchPage = location.hash.indexOf(LAUNCH_HASH) === 0, pendingAdd = null;
 
     function el(tag, cls, text) {
       var e = document.createElement(tag);
@@ -309,11 +311,61 @@
     }
 
     // ---------- Home: full-screen tiles ----------
+    // Your tiles live in the Home page's own storage (one origin), because every website has separate storage.
+    // Other pages hand a site over through Home's URL hash (see addCurrentSite), never by writing it themselves.
+    var PALETTE = ['#6441a5', '#0066dc', '#e62b1e', '#009270', '#c4161c', '#2c4b8e', '#fa6400', '#8e24aa', '#00838f'];
+    function loadList(k) { try { var v = JSON.parse(store(k) || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
+    function saveList(k, v) { store(k, JSON.stringify(v)); }
+    function siteName(u) {
+      var h = new URL(u).hostname.replace(/^(www|m)\./, '');
+      return h.charAt(0).toUpperCase() + h.split('.')[0].slice(1);
+    }
+
+    function addTile(url, name) {
+      if (!/^https?:\/\//i.test(url) || url.indexOf(SEARCH) === 0) { toast('That doesn\'t look like a website'); return false; }
+      var mine = loadList('tiles').filter(function (t) { return t.u !== url; });
+      name = (name || '').split(/\s[-|–—:·]\s/)[0].trim().slice(0, 24) || siteName(url);
+      mine.push({ n: name, u: url });
+      saveList('tiles', mine);
+      saveList('hidden', loadList('hidden').filter(function (u) { return u !== url; }));
+      toast('Added ' + name + ' to Home');
+      return true;
+    }
+
+    function removeFocusedTile() {
+      var t = rows[fr] && rows[fr][fc];
+      if (!t || !t.__url) return;
+      if (t.__custom) saveList('tiles', loadList('tiles').filter(function (x) { return x.u !== t.__url; }));
+      else saveList('hidden', loadList('hidden').concat([t.__url]));
+      toast('Removed ' + t.textContent + (t.__custom ? '' : ' · "Restore tiles" brings it back'));
+      var r = fr, c = fc;
+      renderHome();
+      focusAt(r, c);
+    }
+
+    function addCurrentSite() {
+      location.assign(HOME + '&add=' + encodeURIComponent(location.href) + '&name=' + encodeURIComponent(document.title || ''));
+    }
+
     function tile(label, cls, action, color, dark) {
       var t = el('div', 'tile ' + (cls || '') + (dark ? ' dark' : ''), label);
       if (color) t.style.background = color;
       t.__action = action;
       return t;
+    }
+    function siteTile(name, url, color, dark, custom) {
+      var t = tile(name, '', function () { location.assign(url); }, color, dark);
+      t.__url = url;
+      t.__custom = custom;
+      return t;
+    }
+    function input(placeholder, submit) {
+      var i = el('input', 'search');
+      i.type = 'text';
+      i.placeholder = placeholder;
+      i.__action = function () { i.focus(); };
+      i.__submit = submit;
+      return i;
     }
 
     function renderHome() {
@@ -325,34 +377,57 @@
       brand.appendChild(document.createTextNode('Shield'));
       clock = el('div', 'clock');
       top.appendChild(brand);
+      if (launchPage) top.appendChild(el('div', 'hint', 'OK open · Yellow remove tile'));
       top.appendChild(clock);
       home.appendChild(top);
+      tick();
+      search = input('Search or type a website', go);
 
-      search = el('input', 'search');
-      search.type = 'text';
-      search.placeholder = 'Search or type a website';
-      search.__action = function () { search.focus(); };
-      var first = [search];
       if (!launchPage) {
-        first.push(tile('Back to page', 'action small', closeHome));
-        first.push(tile('Close pop-ups', 'action small', function () { closeHome(); closePopups(); }));
-        first.push(tile(shieldsOn ? 'Shields on · ' + blockedCount + ' blocked' : 'Shields off', 'action small', function () {
-          store('shields', shieldsOn ? 'off' : 'on'); location.reload();
-        }));
-        first.push(tile(cursorOn ? 'Pointer on' : 'Pointer off', 'action small', function () {
-          cursorOn = !cursorOn;
-          store('cursor', cursorOn ? 'on' : 'off');
-          cursor.classList.toggle('off', !cursorOn);
-          renderHome();
-          focusAt(0, 4);
-        }));
-        first.push(tile('Reload', 'action small', function () { location.reload(); }));
+        addRow(null, [
+          tile('Home', 'action small', function () { location.assign(HOME); }),
+          tile('Back to page', 'action small', closeHome),
+          tile('Close pop-ups', 'action small', function () { closeHome(); closePopups(); }),
+          tile('Add to Home', 'action small', addCurrentSite),
+          tile(shieldsOn ? 'Shields on · ' + blockedCount + ' blocked' : 'Shields off', 'action small', function () {
+            store('shields', shieldsOn ? 'off' : 'on'); location.reload();
+          }),
+          tile(cursorOn ? 'Pointer on' : 'Pointer off', 'action small', function () {
+            cursorOn = !cursorOn;
+            store('cursor', cursorOn ? 'on' : 'off');
+            cursor.classList.toggle('off', !cursorOn);
+            renderHome();
+            focusAt(0, 5);
+          }),
+          tile('Reload', 'action small', function () { location.reload(); })
+        ]);
+        addRow(null, [search]);
+        return;
       }
-      addRow(null, first);
-      SECTIONS.forEach(function (sec) {
-        addRow(sec[0], sec[1].map(function (t) {
-          return tile(t[0], '', function () { location.assign(t[1]); }, t[2], t[3]);
+
+      var hidden = loadList('hidden'), first = [search, input('Add a website, e.g. example.com', function (text) {
+        if (addTile(toUrl(text))) { renderHome(); focusAt(1, 0); }
+      })];
+      if (pendingAdd) {
+        var p = pendingAdd;
+        first.unshift(tile('Add ' + (p.n || siteName(p.u)).split(/\s[-|–—:·]\s/)[0].slice(0, 24) + ' to Home?', 'action small', function () {
+          pendingAdd = null;
+          addTile(p.u, p.n);
+          renderHome();
+          focusAt(1, 0);
         }));
+      }
+      if (hidden.length) first.push(tile('Restore tiles', 'action small', function () { saveList('hidden', []); renderHome(); focusAt(0, 0); }));
+      addRow(null, first);
+      var mine = loadList('tiles');
+      if (mine.length) {
+        addRow('My tiles', mine.map(function (t) {
+          return siteTile(t.n, t.u, PALETTE[hash(t.u) % PALETTE.length], false, true);
+        }));
+      }
+      SECTIONS.forEach(function (sec) {
+        var tiles = sec[1].filter(function (t) { return hidden.indexOf(t[1]) < 0; });
+        if (tiles.length) addRow(sec[0], tiles.map(function (t) { return siteTile(t[0], t[1], t[2], t[3], false); }));
       });
     }
 
@@ -370,24 +445,36 @@
       fc = Math.max(0, Math.min(rows[fr].length - 1, c));
       var t = rows[fr][fc];
       t.classList.add('f');
-      // Keep the focused row on screen; the first rows stay put so the header doesn't jump around.
+      // Keep the focused tile on screen; the first rows stay put so the header doesn't jump around.
       var rect = t.getBoundingClientRect();
       var overflow = rect.bottom + 60 - window.innerHeight;
       if (overflow > 0) home.scrollTop += overflow;
       else if (rect.top < 160) home.scrollTop = Math.max(0, home.scrollTop + rect.top - 160);
     }
 
+    // Spatial: the nearest tile beyond the current one's edge in that direction, preferring tiles that line up
+    // with it. Works across wrapped rows and wide fields, where comparing tile centres picks diagonals.
     function homeMove(k) {
-      if (k === 'left' || k === 'right') return focusAt(fr, fc + (k === 'left' ? -1 : 1));
-      var nr = Math.max(0, Math.min(rows.length - 1, fr + (k === 'up' ? -1 : 1)));
-      if (nr === fr) return;
-      // Land on the tile in the next row that sits closest under/over the current one.
-      var r0 = rows[fr][fc].getBoundingClientRect(), x = r0.left + r0.width / 2, best = 0, bestD = Infinity;
-      rows[nr].forEach(function (t, i) {
-        var r = t.getBoundingClientRect(), d = Math.abs(r.left + r.width / 2 - x);
-        if (d < bestD) { bestD = d; best = i; }
+      var d = DIRS[k], a = rows[fr][fc].getBoundingClientRect(), best = null, bestScore = Infinity;
+      rows.forEach(function (row, r) {
+        row.forEach(function (t, c) {
+          if (r === fr && c === fc) return;
+          var b = t.getBoundingClientRect(), along, gap, skew;
+          if (d[0]) {
+            along = d[0] > 0 ? b.left - a.right : a.left - b.right;
+            gap = Math.max(0, Math.max(a.top, b.top) - Math.min(a.bottom, b.bottom));
+            skew = Math.abs((b.top + b.bottom) - (a.top + a.bottom)) / 2;
+          } else {
+            along = d[1] > 0 ? b.top - a.bottom : a.top - b.bottom;
+            gap = Math.max(0, Math.max(a.left, b.left) - Math.min(a.right, b.right));
+            skew = Math.abs((b.left + b.right) - (a.left + a.right)) / 2;
+          }
+          if (along < -12) return; // the focused tile is scaled up, so neighbours overlap it slightly
+          var score = Math.max(0, along) + gap * 3 + skew * 0.1;
+          if (score < bestScore) { bestScore = score; best = [r, c]; }
+        });
       });
-      focusAt(nr, best);
+      if (best) focusAt(best[0], best[1]);
     }
 
     function tick() {
@@ -398,9 +485,9 @@
     function openHome() {
       renderHome();
       home.hidden = false;
-      tick();
+      clearInterval(clockTimer);
       clockTimer = setInterval(tick, 15000);
-      focusAt(launchPage ? 1 : 0, 0);
+      focusAt(launchPage && rows.length > 1 && !pendingAdd ? 1 : 0, 0);
     }
     function closeHome() {
       if (launchPage) return; // nothing behind it
@@ -570,15 +657,18 @@
       var consume = function () { e.preventDefault(); e.stopImmediatePropagation(); };
 
       if (!home.hidden) {
-        if (shadow.activeElement === search) {
-          if (k === 'enter') { consume(); go(search.value); return; }
-          if (k === 'back') { consume(); search.blur(); return; }
+        var field = shadow.activeElement;
+        if (field && field.__submit) {
+          if (k === 'enter') { consume(); field.__submit(field.value); return; }
+          if (k === 'back') { consume(); field.blur(); return; }
           if (k === 'left' || k === 'right') return; // caret movement
-          search.blur();
+          field.blur();
         }
         consume();
-        if (k === 'back' || k === 'red') closeHome();
+        if (k === 'back' && launchPage) { if (history.length > 1) history.back(); }
+        else if (k === 'back' || k === 'red') closeHome();
         else if (k === 'enter') rows[fr][fc].__action();
+        else if (k === 'yellow' && launchPage) removeFocusedTile();
         else if (DIRS[k]) homeMove(k);
         return;
       }
@@ -605,7 +695,14 @@
         mount();
         window.addEventListener('keydown', function (e) { try { onKey(e); } catch (err) { report(err); } }, true);
         window.addEventListener('resize', function () { moveCursor(0, 0); });
-        if (launchPage) { openHome(); return; }
+        if (launchPage) {
+          var q = new URLSearchParams(location.hash.slice(LAUNCH_HASH.length + 1));
+          // Any page could send us here with &add=, so the tile waits for an OK instead of being saved outright.
+          if (/^https?:\/\//i.test(q.get('add') || '')) pendingAdd = { u: q.get('add'), n: q.get('name') || '' };
+          history.replaceState(null, '', location.pathname + location.search + LAUNCH_HASH);
+          openHome();
+          return;
+        }
         // Click-jacking ads navigate the whole tab to an ad network's page; bounce straight back from those.
         if (shieldsOn && hostBlocked(host, false)) {
           toast('Blocked an ad page');
@@ -628,7 +725,9 @@
 
     window.__tizenShieldTest = { isBlocked: isBlocked, toUrl: toUrl, state: function () {
       return { cx: cx, cy: cy, homeOpen: !home.hidden, row: fr, col: fc, blocked: blockedCount, shieldsOn: shieldsOn,
-        cursorOn: cursorOn, snapped: snapped && (snapped.id || snapped.tagName) };
+        cursorOn: cursorOn, snapped: snapped && (snapped.id || snapped.tagName),
+        tiles: loadList('tiles').map(function (t) { return t.n; }), hidden: loadList('hidden').length,
+        focused: rows[fr] && rows[fr][fc] ? rows[fr][fc].textContent || rows[fr][fc].placeholder : null };
     } };
   }
 })();
