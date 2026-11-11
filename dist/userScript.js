@@ -20,6 +20,10 @@
     } catch (e) { /* nothing left to report with */ }
   }
   function hideBadge() { badgeDone = true; if (badge && badge.parentNode) badge.parentNode.removeChild(badge); }
+  // TizenBrew injects the active module into every page it opens, its own launcher included (a local file),
+  // and hosts app modules on 127.0.0.1. Only ordinary websites get the browser layer.
+  if (!/^https?:$/.test(location.protocol) ||
+      (/^(127\.0\.0\.1|localhost)$/.test(location.hostname) && !window.__tizenShieldAllowLocal)) return;
   if (window.__tizenShield) return;
   window.__tizenShield = true;
   showBadge('TizenShield starting…');
@@ -52,7 +56,7 @@
   try { main(); } catch (e) { report(e); }
 
   function main() {
-    var FILTERS_URL = "https://raw.githubusercontent.com/skjain-dev/tizenshield/master/dist/filters-b2a032d3b6.txt";
+    var FILTERS_URL = "https://raw.githubusercontent.com/skjain-dev/tizenshield/master/dist/filters-e5c10318b6.txt";
     var F = null, onFilters = []; // filled once the data file arrives
     var hash = (function hash(s) {
   var h = 0x811c9dc5;
@@ -253,14 +257,14 @@
     var UI_CSS = [
       ':host{all:initial}',
       '.cursor{position:fixed;left:0;top:0;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;',
-      'background:rgba(255,255,255,.35);border:3px solid #fb542b;box-shadow:0 0 8px rgba(0,0,0,.6);',
-      'transition:transform .12s ease-out,opacity .4s}',
+      'background:rgba(255,255,255,.35);border:3px solid #fb542b;',
+      '}',
       '.cursor.idle{opacity:.35}.cursor.off{display:none}',
-      '.ring{position:fixed;border:4px solid #fb542b;border-radius:10px;box-shadow:0 0 0 4px rgba(251,84,43,.25);',
-      'transition:all .12s ease-out;pointer-events:none}',
+      '.ring{position:fixed;border:4px solid #fb542b;border-radius:10px;',
+      'pointer-events:none}',
       '.ring[hidden]{display:none}',
       '.home{position:fixed;left:0;top:0;width:100vw;height:100vh;box-sizing:border-box;padding:48px 72px;overflow:hidden;',
-      'background:linear-gradient(160deg,#141821,#0b0d12);color:#f2f2f2;font:24px/1.3 system-ui,sans-serif;pointer-events:auto}',
+      'background:#10131a;color:#f2f2f2;font:24px/1.3 system-ui,sans-serif;pointer-events:auto}',
       '.home[hidden]{display:none}',
       '.top{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px}',
       '.brand{font-size:34px;font-weight:700;letter-spacing:.5px}.brand b{color:#fb542b}',
@@ -269,18 +273,16 @@
       '.row{display:flex;flex-wrap:wrap;gap:22px}.row+.row{margin-top:22px}',
       '.hint{font-size:22px;color:#8d93a1}',
       '.tile{flex:none;width:250px;height:140px;box-sizing:border-box;padding:18px;border-radius:18px;display:flex;',
-      'align-items:flex-end;font-size:27px;font-weight:700;color:#fff;transition:transform .12s ease-out,box-shadow .12s;',
-      'box-shadow:0 6px 18px rgba(0,0,0,.4);outline:4px solid transparent}',
+      'align-items:flex-end;font-size:27px;font-weight:700;color:#fff;outline:5px solid transparent;outline-offset:3px}',
       '.tile.dark{color:#111}',
       '.tile.action{width:auto;min-width:150px;padding:0 26px;align-items:center;background:#232733;font-weight:500;font-size:24px}',
       '.search{width:520px;padding:0 24px;align-items:center;font:inherit;font-size:26px;color:#fff;background:#232733;',
       'border:0;border-radius:18px;height:84px;outline:4px solid transparent}',
       '.search::placeholder{color:#8d93a1}',
       '.tile.small,.search{height:84px}',
-      '.f{transform:scale(1.08);outline-color:#fff;box-shadow:0 12px 32px rgba(0,0,0,.7)}',
+      '.f{outline-color:#fff}',
       '.toast{position:fixed;left:50%;bottom:48px;transform:translateX(-50%);padding:16px 28px;background:#1e2029;',
-      'color:#f0f0f0;border-radius:14px;font:24px system-ui,sans-serif;opacity:0;transition:opacity .4s;',
-      'box-shadow:0 8px 24px rgba(0,0,0,.6)}',
+      'color:#f0f0f0;border-radius:14px;font:24px system-ui,sans-serif;opacity:0}',
       '.toast.show{opacity:.96}'
     ].join('');
 
@@ -326,7 +328,7 @@
       new MutationObserver(function () {
         if ((!hostEl.isConnected || hostEl.nextElementSibling) && moves++ < 50) document.documentElement.appendChild(hostEl);
       }).observe(document.documentElement, { childList: true });
-      window.addEventListener('scroll', function () { ring.hidden = true; snapped = null; }, true);
+      window.addEventListener('scroll', function () { ring.hidden = true; snapped = null; targetsCache = null; }, true);
       moveCursor(0, 0);
     }
 
@@ -541,7 +543,11 @@
       idleTimer = setTimeout(function () { cursor.classList.add('idle'); }, 3000);
     }
 
+    // Scanning every clickable and measuring it costs real time on a TV CPU, so reuse the last scan until the
+    // page scrolls, something is clicked, or it goes stale.
+    var targetsCache = null, targetsAt = 0;
     function visibleTargets() {
+      if (targetsCache && Date.now() - targetsAt < 1500) return targetsCache;
       var w = window.innerWidth, h = window.innerHeight, out = [];
       var list = document.querySelectorAll(CLICKABLE);
       // ponytail: scans every clickable each press; cap it so huge pages stay responsive on the TV
@@ -550,6 +556,8 @@
         if (r.width < 6 || r.height < 6 || r.bottom < 0 || r.right < 0 || r.top > h || r.left > w) continue;
         out.push({ el: list[i], r: r, x: r.left + r.width / 2, y: r.top + r.height / 2 });
       }
+      targetsCache = out;
+      targetsAt = Date.now();
       return out;
     }
 
@@ -647,6 +655,7 @@
     }
 
     function clickAt(x, y) {
+      targetsCache = null;
       var t = document.elementFromPoint(x, y);
       while (t && t.shadowRoot) {
         var inner = t.shadowRoot.elementFromPoint(x, y);
@@ -734,12 +743,17 @@
         var root = document.documentElement;
         if (root.hasAttribute('data-tizenshield')) { hideBadge(); return; }
         root.setAttribute('data-tizenshield', '');
-        if (shieldsOn) { loadFilters(); whenFilters(hideAds); }
+        if (launchPage) {
+          // Home only borrows Brave Search's origin (for storage) and load timing; stop the page itself and
+          // hide it, so the TV isn't also running a search engine behind the tiles.
+          window.stop();
+          newSheet(document).insertRule('body{display:none!important}', 0);
+        } else if (shieldsOn) { loadFilters(); whenFilters(hideAds); }
         mount();
         hideBadge();
         if (cssFailures.length) toast('TizenShield: TV skipped styles: ' + cssFailures.join(' | '));
         window.addEventListener('keydown', function (e) { try { onKey(e); } catch (err) { report(err); } }, true);
-        window.addEventListener('resize', function () { moveCursor(0, 0); });
+        window.addEventListener('resize', function () { targetsCache = null; moveCursor(0, 0); });
         if (launchPage) {
           var q = new URLSearchParams(location.hash.slice(LAUNCH_HASH.length + 1));
           // Any page could send us here with &add=, so the tile waits for an OK instead of being saved outright.

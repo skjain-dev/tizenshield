@@ -31,7 +31,7 @@ const server = createServer((req, res) => {
 const origin = `http://127.0.0.1:${server.address().port}`;
 
 const profile = mkdtempSync(join(tmpdir(), 'tizenshield-e2e-'));
-const { send, dialogs, close } = await launch({ browserPath, profile, scripts: () => [script], dist: join(here, '../dist'),
+const { send, dialogs, close } = await launch({ browserPath, profile, scripts: () => ['window.__tizenShieldAllowLocal = true', script], dist: join(here, '../dist'),
   args: ['--headless=new', '--window-size=1920,1080'] });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -197,6 +197,21 @@ try {
     assert.deepEqual(s.tiles, ['Example News']);
     assert.equal(await evalJs('location.hash'), '#tizenshield-home');
   });
+  await check('key presses stay fast with the CPU slowed 6x (roughly a TV)', async () => {
+    await send('Page.navigate', { url: origin + '/' });
+    await sleep(1500);
+    await send('Emulation.setCPUThrottlingRate', { rate: 6 });
+    const press = (code) => evalJs(`(() => { const t = performance.now();
+      window.dispatchEvent(new KeyboardEvent('keydown', { keyCode: ${code}, bubbles: true }));
+      return Math.round(performance.now() - t); })()`);
+    const page = [await press(39), await press(40), await press(37)];
+    await press(403);
+    const menu = [await press(39), await press(40), await press(38)];
+    await press(10009);
+    await send('Emulation.setCPUThrottlingRate', { rate: 1 });
+    results.push(`     page arrows ${page.join('/')} ms, menu arrows ${menu.join('/')} ms`);
+    assert.ok(Math.max(...page, ...menu) < 120, 'a key press took over 120 ms');
+  });
   await check('address bar: text searches, domains open', async () => {
     const u = (t) => evalJs(`__tizenShieldTest.toUrl(${JSON.stringify(t)})`);
     assert.equal(await u('wikipedia.org'), 'https://wikipedia.org');
@@ -212,6 +227,12 @@ try {
       (0, eval)(${JSON.stringify(script)}); return Math.round(performance.now() - t); })()`);
     results.push(`     injection took ${ms} ms`);
     assert.ok(ms < 1000);
+  });
+  await check("stays off pages that aren't ordinary websites (TizenBrew's own launcher is a local file)", async () => {
+    await send('Page.navigate', { url: 'data:text/html,<p>launcher</p>' });
+    await sleep(800);
+    assert.equal(await evalJs('typeof window.__tizenShieldTest'), 'undefined');
+    assert.equal(await evalJs("document.querySelectorAll('tizen-shield-ui').length"), 0);
   });
   await check('no error dialogs', async () => assert.deepEqual(dialogs, []));
 } finally {

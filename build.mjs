@@ -35,7 +35,11 @@ const files = process.argv.length > 2 ? process.argv.slice(2)
   : [...braveLists(), ...readdirSync(join(root, 'lists')).filter((f) => f.endsWith('.txt')).map((f) => join(root, 'lists', f))];
 if (!files.length) { console.error('no filter lists found'); process.exit(1); }
 
-const data = compile(files.map((f) => readFileSync(f, 'utf8')));
+// Cookie-notice lists are half of all hide rules, which a TV CPU pays for on every page; the green button
+// closes those banners instead. COOKIE_LISTS=1 puts them back.
+const texts = files.map((f) => readFileSync(f, 'utf8'))
+  .filter((t) => process.env.COOKIE_LISTS || !/^! Title:.*cookie/im.test(t.slice(0, 2000)));
+const data = compile(texts);
 const text = packText(data);
 const name = `filters-${createHash('sha256').update(text).digest('hex').slice(0, 10)}.txt`;
 const dist = join(root, 'dist');
@@ -46,6 +50,6 @@ const out = inject(readFileSync(join(root, 'src/runtime.js'), 'utf8'), DATA_BASE
 writeFileSync(join(dist, 'userScript.js'), out);
 
 const count = (s) => (s ? s.split('\n').length : 0);
-console.log(`${files.length} lists -> generic hide ${count(data.g)}, site hide ${Object.keys(data.s).length} hosts, ` +
+console.log(`${texts.length} of ${files.length} lists -> generic hide ${count(data.g)}, site hide ${Object.keys(data.s).length} hosts, ` +
   `site exceptions ${Object.keys(data.x).length} hosts, block ${count(data.n)}, block 3p ${count(data.t)}, ` +
   `allow ${count(data.e)} -> dist/userScript.js ${(out.length / 1024).toFixed(0)} KB + dist/${name} ${(text.length / 1024).toFixed(0)} KB`);
