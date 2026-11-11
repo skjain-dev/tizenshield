@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { compile, inject, TOKEN } from '../lib/compile.mjs';
+import { compile, inject, pack, hash, TOKENS } from '../lib/compile.mjs';
 
 const lines = (s) => (s ? s.split('\n') : []);
 const c = (...ls) => compile([ls.join('\n')]);
@@ -49,8 +49,31 @@ test('comments, headers and preprocessor lines are ignored, content between kept
   assert.deepEqual(lines(d.g), ['.inside']);
 });
 
-test('inject replaces exactly one token', () => {
-  assert.equal(inject(`var F = ${TOKEN};`, { g: '$&' }), 'var F = {"g":"$&"};');
-  assert.throws(() => inject('no token', {}));
-  assert.throws(() => inject(TOKEN + TOKEN, {}));
+test('generic selectors without a class or id in the last part are dropped; site-specific ones kept', () => {
+  const d = c('##div[id^="ad"]', '##a[href*="track"]', '##.box > div', '##div.ad', 'a.com##div[id^="ad"]');
+  assert.deepEqual(lines(d.g), ['div.ad']);
+  assert.deepEqual(d.s, { 'a.com': 'div[id^="ad"]' });
+});
+
+test('pack puts every host in the bucket its hash selects', () => {
+  const d = c('||ads.example^', '||t.example^$3p', '@@||ok.example^', 'a.com##.x', 'a.com##.y', 'a.com#@#.z');
+  const p = pack(d, 8);
+  const bucket = (h) => p.h[hash(h) & 7];
+  assert.ok(bucket('ads.example').includes('\nnads.example\n'));
+  assert.ok(bucket('t.example').includes('\ntt.example\n'));
+  assert.ok(bucket('ok.example').includes('\neok.example\n'));
+  assert.ok(bucket('a.com').includes('\nsa.com\t.x\u001f.y\n'));
+  assert.ok(bucket('a.com').includes('\nxa.com\t.z\n'));
+  assert.equal(p.h.length, 8);
+});
+
+test('inject fills both tokens exactly once and ships the same hash function', () => {
+  const runtime = `var F = ${TOKENS.filters}; var hash = ${TOKENS.hash};`;
+  const out = inject(runtime, c('||ads.example^'));
+  const fn = new Function(out + '; return [F, hash];');
+  const [F, h] = fn();
+  assert.equal(h('ads.example'), hash('ads.example'));
+  assert.ok(F.h[h('ads.example') & (F.h.length - 1)].includes('\nnads.example\n'));
+  assert.throws(() => inject('no tokens', {}));
+  assert.throws(() => inject(runtime + TOKENS.hash, c()));
 });

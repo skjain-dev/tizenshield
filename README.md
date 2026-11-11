@@ -9,18 +9,28 @@ Not affiliated with Brave Software. It doesn't use Brave's code, just the public
 
 In TizenBrew's module manager choose **Add GitHub Module**, enter `skjain-dev/tizenshield`, then launch **TizenShield Browser**.
 
-## Remote
+## Using it
+
+It opens on **Home**: big tiles for video, news, sports and everyday sites, plus a search tile if you do want to type.
+Move between tiles with the arrows and press OK.
+
+On a website:
 
 | Key | Action |
 |---|---|
-| Arrows | Move the pointer (hold to speed up; pushing past an edge scrolls) |
-| OK | Click under the pointer. On a text field, opens the TV keyboard |
-| Return | Back (or leaves a text field / closes the menu) |
-| Red | Address bar and menu: back, forward, reload, home, Shields, Pointer, bookmarks |
+| Arrows | Jump to the nearest link or button in that direction; with nothing there, the page scrolls |
+| OK | Open / press what's highlighted. On a text field, opens the TV keyboard |
+| Return | Back (or leaves a text field) |
+| Red | Home (tiles, plus Back to page, Close pop-ups, Shields, Pointer, Reload) |
+| Green | Close pop-ups: hides overlays covering the page and unlocks scrolling |
 | CH ▲ / CH ▼ | Page up / page down |
 
-**Shields** (per site): blocks requests to ad and tracker hosts and hides ad elements. Turn it off from the menu if a
-site breaks. **Pointer** (per site): turn it off on TV-native sites that drive themselves with the remote.
+**Shields** (per site): blocks requests to ad and tracker hosts, hides ad elements, and bounces back from pages on ad
+networks. Turn it off from Home if a site breaks. **Pointer** (per site): turn it off on TV-native sites that drive
+themselves with the remote.
+
+The tiles skip DRM services (Netflix, Prime, Hotstar, Spotify): the TV's web engine has no Widevine or PlayReady, so
+they can't play in a browser on it.
 
 ## What it can't do
 
