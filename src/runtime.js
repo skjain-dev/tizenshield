@@ -4,6 +4,23 @@
 (function () {
   'use strict';
   var TOP = window.top === window;
+
+  // A status label drawn straight into the page with nothing but basic DOM calls, so the TV shows whether the
+  // script ran at all and what broke. alert() can't be relied on: TizenBrew pages may swallow dialogs.
+  var badge = null;
+  function showBadge(text, bad) {
+    if (!TOP) return;
+    try {
+      if (!document.documentElement) { setTimeout(function () { showBadge(text, bad); }, 50); return; }
+      badge = badge || document.createElement('div');
+      badge.textContent = text;
+      badge.style.cssText = 'position:fixed;left:24px;top:24px;z-index:2147483647;padding:14px 20px;border-radius:12px;' +
+        'font:22px/1.4 sans-serif;color:#fff;white-space:pre-wrap;max-width:85vw;background:' + (bad ? '#c62828' : '#333');
+      document.documentElement.appendChild(badge);
+    } catch (e) { /* nothing left to report with */ }
+  }
+  function hideBadge() { if (badge && badge.parentNode) badge.parentNode.removeChild(badge); }
+  showBadge('TizenShield starting…');
   var CONSTRUCTABLE = (function () {
     try { new CSSStyleSheet(); return 'adoptedStyleSheets' in document; } catch (e) { return false; }
   })();
@@ -24,7 +41,8 @@
   function report(e) {
     if (!TOP || reported) return;
     reported = true;
-    try { alert('TizenShield error: ' + (e && e.message ? e.message : e)); } catch (e2) { /* no alert */ }
+    var stack = e && e.stack ? String(e.stack).split('\n').slice(0, 4).join('\n') : '';
+    showBadge('TizenShield error: ' + (e && e.message ? e.message : e) + (stack ? '\n' + stack : ''), true);
   }
 
   // A sheet attached to a document or shadow root; <style> fallback for engines without constructable sheets.
@@ -707,6 +725,7 @@
       try {
         if (shieldsOn) whenFilters(hideAds);
         mount();
+        hideBadge();
         window.addEventListener('keydown', function (e) { try { onKey(e); } catch (err) { report(err); } }, true);
         window.addEventListener('resize', function () { moveCursor(0, 0); });
         if (launchPage) {
