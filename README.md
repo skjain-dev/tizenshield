@@ -7,7 +7,7 @@ Not affiliated with Brave Software. It doesn't use Brave's code, just the public
 
 ## Install on the TV
 
-In TizenBrew's module manager, add `gh/skjain-dev/tizenshield` and launch **TizenShield Browser**.
+In TizenBrew's module manager choose **Add GitHub Module**, enter `skjain-dev/tizenshield`, then launch **TizenShield Browser**.
 
 ## Remote
 
